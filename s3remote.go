@@ -4,15 +4,16 @@ import (
 	"io"
 	"path"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type S3RemoteStore struct {
 	Bucket string
 	Root   string
 	client *s3.S3
+	cfg    *aws.Config
 }
 
 func (store *S3RemoteStore) GetMeta(name string) (stream io.ReadCloser, size int64, err error) {
@@ -21,12 +22,13 @@ func (store *S3RemoteStore) GetMeta(name string) (stream io.ReadCloser, size int
 		Bucket: &store.Bucket,
 		Key:    &key,
 	}
-	output_, err := store.client.GetObject(input_)
+
+	req := store.client.GetObjectRequest(input_)
+	output_, err := req.Send()
 	if err != nil {
 		return
 	}
 	return output_.Body, *output_.ContentLength, nil
-
 }
 
 func (store *S3RemoteStore) GetTarget(name string) (stream io.ReadCloser, size int64, err error) {
@@ -35,22 +37,27 @@ func (store *S3RemoteStore) GetTarget(name string) (stream io.ReadCloser, size i
 		Bucket: &store.Bucket,
 		Key:    &key,
 	}
-	output_, err := store.client.GetObject(input_)
+	req := store.client.GetObjectRequest(input_)
+	output_, err := req.Send()
 	if err != nil {
 		return nil, 0, err
 	}
 	return output_.Body, *output_.ContentLength, nil
 }
 
-func New(bucket string, rootKey string, cfgs ...*aws.Config) (store *S3RemoteStore, err error) {
-	sess, err := session.NewSession(cfgs...)
-	if err != nil {
-		return nil, err
+func New(bucket string, rootKey string, cfg *aws.Config) (store *S3RemoteStore, err error) {
+	if cfg == nil {
+		newConfig, err := external.LoadDefaultAWSConfig()
+		if err != nil {
+			return nil, err
+		}
+		cfg = &newConfig
 	}
-	client := s3.New(sess)
+	client := s3.New(*cfg)
 	return &S3RemoteStore{
 		Bucket: bucket,
 		Root:   rootKey,
 		client: client,
+		cfg:    cfg,
 	}, nil
 }
